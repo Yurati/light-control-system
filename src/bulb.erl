@@ -24,19 +24,19 @@ main() ->
 
   ets:new(pids, [set, named_table]),
   ets:new(var, [set, named_table, public]),
+  ets:new(light_brightness, [set, named_table]),
   ets:insert(pids, [{l1pid, Light_1}, {l2pid, Light_2}, {l3pid, Light_3}, {l4pid, Light_4}, {l5pid, Light_5},
     {controller, Controller}, {mrpid, Main_Room_PID}, {changer, Changer}, {drawer, Drawer},
     {error_pid, Error_Handler_PID}, {light_level_pid, Set_Up_PID},
     {halt_pid, Halt_PID}]),
 
-  ets:insert(var, [{brightness_1, 0}]),
-  ets:insert(var, [{brightness_2, 0}]),
-  ets:insert(var, [{brightness_3, 0}]),
-  ets:insert(var, [{brightness_4, 0}]),
-  ets:insert(var, [{brightness_5, 0}]),
+  ets:insert(var, [{brightness_1, 0}, {brightness_2, 0}, {brightness_3, 0}, {brightness_4, 0}, {brightness_5, 0}]),
+
+  ets:insert(light_brightness, [{Light_1, brightness_1}, {Light_2, brightness_2}, {Light_3, brightness_3},
+    {Light_4, brightness_4}, {Light_5, brightness_5}]),
 
   clear_board(),
-  io:format("\nLight simulator launched!"),
+  io:format("\nLight simulator launched!\n"),
   timer:sleep(2000),
   Set_Up_PID ! {start}.
 
@@ -151,79 +151,70 @@ get_light_by_pid(Pid) ->
       Error_Handler_PID ! {invalid_light}
   end.
 
-get_brightness_by_pid(Pid) ->
-  [{error_pid, Error_Handler_PID}] = ets:lookup(pids, error_pid),
-  [{brightness_1, Brightness1}] = ets:lookup(var,brightness_1),
-  [{brightness_2, Brightness2}] = ets:lookup(var,brightness_2),
-  [{brightness_3, Brightness3}] = ets:lookup(var,brightness_3),
-  [{brightness_4, Brightness4}] = ets:lookup(var,brightness_4),
-  [{brightness_5, Brightness5}] = ets:lookup(var,brightness_5),
-
+pid_to_number(Pid) ->
   [{_, Light1_PID}] = ets:lookup(pids, l1pid),
   [{_, Light2_PID}] = ets:lookup(pids, l2pid),
   [{_, Light3_PID}] = ets:lookup(pids, l3pid),
   [{_, Light4_PID}] = ets:lookup(pids, l4pid),
   [{_, Light5_PID}] = ets:lookup(pids, l5pid),
-
   if
-    Pid =:= Light1_PID -> Brightness1;
-    Pid =:= Light2_PID -> Brightness2;
-    Pid =:= Light3_PID -> Brightness3;
-    Pid =:= Light4_PID -> Brightness4;
-    Pid =:= Light5_PID -> Brightness5;
-    true ->
-      Error_Handler_PID ! {invalid_light}
+    Pid =:= Light1_PID -> 1;
+    Pid =:= Light2_PID -> 2;
+    Pid =:= Light3_PID -> 3;
+    Pid =:= Light4_PID -> 4;
+    Pid =:= Light5_PID -> 5
   end.
 
+get_brightness_by_pid(Pid) ->
+  [{_, Term}] = ets:lookup(light_brightness,Pid),
+  [{_, Brightness}] = ets:lookup(var,Term),
+  Brightness.
+
 listen() ->
+  [{_, Changer}] = ets:lookup(pids, changer),
   receive
     {here, Light , Brightness} ->
-      Light ! {change, Brightness},
+      Light ! {change, Changer, Brightness},
       listen()
   end.
 
 light1() ->
-  [{_, Changer}] = ets:lookup(pids, changer),
   receive
-    {change, Brightness} ->
+    {change, Changer, Brightness} ->
       Changer ! {light1, Brightness},
       light1()
   end.
 
 light2() ->
-  [{_, Changer}] = ets:lookup(pids, changer),
   receive
-    {change, Brightness} ->
+    {change, Changer, Brightness} ->
       Changer ! {light2, Brightness},
       light2()
   end.
 
 light3() ->
-  [{_, Changer}] = ets:lookup(pids, changer),
   receive
-    {change, Brightness} ->
+    {change, Changer, Brightness} ->
       Changer ! {light3, Brightness},
       light3()
   end.
 
 light4() ->
-  [{_, Changer}] = ets:lookup(pids, changer),
   receive
-    {change, Brightness} ->
+    {change, Changer, Brightness} ->
       Changer ! {light4, Brightness},
       light4()
   end.
 
 light5() ->
-  [{_, Changer}] = ets:lookup(pids, changer),
   receive
-    {change, Brightness} ->
+    {change, Changer, Brightness} ->
       Changer ! {light5, Brightness},
       light5()
   end.
 
 change_brightness() ->
-  [{mrpid, Main_Room_PID}] = ets:lookup(pids, mrpid),
+  [{_, Main_Room_PID}] = ets:lookup(pids, mrpid),
   receive
     {light1, Brightness} ->
       io:format("\nChanging brightness 1\n"),
@@ -255,7 +246,9 @@ change_brightness() ->
       ets:delete(var, brightness_5),
       ets:insert(var, [{brightness_5, Brightness}]),
       Main_Room_PID ! {success, Light_PID},
-      change_brightness()
+      change_brightness();
+    true ->
+      Main_Room_PID ! {failure}
 end.
 
 handle() ->
@@ -273,6 +266,10 @@ handle() ->
       clear_board(),
       io:format("\nThere is no light like that!\n"),
       handle();
+    {invalid_brightness} ->
+      clear_board(),
+      io:format("\nInvalid brigntess level!\n"),
+      handle();
     {failure} ->
       clear_board(),
       io:format("\nUnexpected error\n"),
@@ -287,19 +284,18 @@ draw() ->
       Drawer ! {draw},
       draw();
     {failure, Light} ->
-      io:format("\Something went wrong!\n"),
+      io:format("\Something went wrong! Light failure ~w~n", [pid_to_number(Light)]),
       halt_sim()
   end.
 
 draw_light(Light_PID) ->
   Brightness = get_brightness_by_pid(Light_PID),
   timer:sleep(1000),
-  clear_board(),
   draw_brightness(Light_PID, Brightness).
 
-draw_brightness(LightNumber, Brightness) ->
+draw_brightness(Light_PID, Brightness) ->
   io:format("\n---\n"),
-  io:format("Light: ~w~n", [LightNumber]),
+  io:format("Light: ~w~n", [pid_to_number(Light_PID)]),
   io:format("Brightness: ~w~n", [Brightness]),
   if
     Brightness =:= 0 ->  io:format("\n---\n");
@@ -333,5 +329,3 @@ draw_all_lights() ->
       draw_light(Light5_PID),
       draw_all_lights()
   end.
-
-
