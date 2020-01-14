@@ -20,11 +20,12 @@ main() ->
   Error_Handler_PID = spawn(bulb, handle, []),
   Set_Up_PID = spawn(bulb, start_brightness, []),
   Halt_PID = spawn(bulb, handle_halt, []),
+  Drawer = spawn(bulb, draw_all_lights, []),
 
   ets:new(pids, [set, named_table]),
   ets:new(var, [set, named_table, public]),
   ets:insert(pids, [{l1pid, Light_1}, {l2pid, Light_2}, {l3pid, Light_3}, {l4pid, Light_4}, {l5pid, Light_5},
-    {controller, Controller}, {mrpid, Main_Room_PID}, {changer, Changer},
+    {controller, Controller}, {mrpid, Main_Room_PID}, {changer, Changer}, {drawer, Drawer},
     {error_pid, Error_Handler_PID}, {light_level_pid, Set_Up_PID},
     {halt_pid, Halt_PID}]),
 
@@ -177,7 +178,6 @@ get_brightness_by_pid(Pid) ->
 listen() ->
   receive
     {here, Light , Brightness} ->
-      io:format("\nIn Controller\n"),
       Light ! {change, Brightness},
       listen()
   end.
@@ -186,7 +186,6 @@ light1() ->
   [{_, Changer}] = ets:lookup(pids, changer),
   receive
     {change, Brightness} ->
-      io:format("In Light 1!"),
       Changer ! {light1, Brightness},
       light1()
   end.
@@ -281,29 +280,29 @@ handle() ->
   end.
 
 draw() ->
+  [{_, Drawer}] = ets:lookup(pids, drawer),
   receive
     {success, Light} ->
-      io:format("\nDrawing\n"),
-      draw_light(Light);
+      draw_light(Light),
+      Drawer ! {draw},
+      draw();
     {failure, Light} ->
       io:format("\Something went wrong!\n"),
       halt_sim()
   end.
 
 draw_light(Light_PID) ->
-  io:format("\nGetting brightness\n"),
   Brightness = get_brightness_by_pid(Light_PID),
   timer:sleep(1000),
   clear_board(),
   draw_brightness(Light_PID, Brightness).
 
 draw_brightness(LightNumber, Brightness) ->
-  %timer:sleep(100),
   io:format("\n---\n"),
   io:format("Light: ~w~n", [LightNumber]),
   io:format("Brightness: ~w~n", [Brightness]),
   if
-    Brightness =:= 0 ->  io:format("0");
+    Brightness =:= 0 ->  io:format("\n---\n");
     Brightness =< 10 ->  io:format("|");
     Brightness > 10 ->  draw_brightness(Brightness)
   end.
@@ -318,5 +317,21 @@ draw_brightness(Brightness) ->
       io:format("\n---\n")
   end.
 
+draw_all_lights() ->
+  [{_, Light1_PID}] = ets:lookup(pids, l1pid),
+  [{_, Light2_PID}] = ets:lookup(pids, l2pid),
+  [{_, Light3_PID}] = ets:lookup(pids, l3pid),
+  [{_, Light4_PID}] = ets:lookup(pids, l4pid),
+  [{_, Light5_PID}] = ets:lookup(pids, l5pid),
+
+  receive
+    {draw} ->
+      draw_light(Light1_PID),
+      draw_light(Light2_PID),
+      draw_light(Light3_PID),
+      draw_light(Light4_PID),
+      draw_light(Light5_PID),
+      draw_all_lights()
+  end.
 
 
