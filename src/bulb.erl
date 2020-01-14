@@ -16,7 +16,6 @@ main() ->
   Light_3 = spawn(bulb, light3, []),
   Light_4 = spawn(bulb, light4, []),
   Light_5 = spawn(bulb, light5, []),
-  Changer = spawn(bulb, change_brightness, []),
   Error_Handler_PID = spawn(bulb, handle, []),
   Set_Up_PID = spawn(bulb, start_brightness, []),
   Halt_PID = spawn(bulb, handle_halt, []),
@@ -26,7 +25,7 @@ main() ->
   ets:new(var, [set, named_table, public]),
   ets:new(light_brightness, [set, named_table]),
   ets:insert(pids, [{l1pid, Light_1}, {l2pid, Light_2}, {l3pid, Light_3}, {l4pid, Light_4}, {l5pid, Light_5},
-    {controller, Controller}, {mrpid, Main_Room_PID}, {changer, Changer}, {drawer, Drawer},
+    {controller, Controller}, {mrpid, Main_Room_PID}, {drawer, Drawer},
     {error_pid, Error_Handler_PID}, {light_level_pid, Set_Up_PID},
     {halt_pid, Halt_PID}]),
 
@@ -171,9 +170,9 @@ get_brightness_by_pid(Pid) ->
   Brightness.
 
 listen() ->
-  [{_, Changer}] = ets:lookup(pids, changer),
   receive
     {here, Light , Brightness} ->
+      Changer = spawn(bulb, change_brightness, []),
       Light ! {change, Changer, Brightness},
       listen()
   end.
